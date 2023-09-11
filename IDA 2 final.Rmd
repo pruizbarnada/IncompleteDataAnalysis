@@ -1,0 +1,182 @@
+---
+title: "IDA - Assignment 2"
+author: "Pablo Ruiz Barnada"
+date: "2023-03-23"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+![](./qa1.jpg)
+
+![](./1a2.jpg)
+
+\newpage
+
+![](./q2.jpg)
+
+**Question 2.b)**
+
+```{r}
+# Load data
+library(maxLik)
+setwd("D:\\Pablo\\Documents\\Universidad\\MASTER\\IncompleteDA")
+load("dataex2.Rdata")
+
+# head(dataex2)
+
+# Define parameters and function to optimise
+sigma <- 1.5
+f2 <- function(mu){
+  sum(dataex2$R * log(dnorm(dataex2$X, mu, sigma)) + 
+      (1 - dataex2$R) * log(pnorm(min(dataex2$X), mu, sigma)))
+}
+
+# maxLik(f2, start = 20)
+# maxLik(f2, start = -20)
+MLE2 <-  maxLik(f2, start = c(mu = 0), method = "NR")
+MLE2
+```
+
+The MLE for $\mu$ is 5.532804. In the code cell above, different starting values for $\mu$ were tried (-20, 0, 20), and they all produced the same MLE.
+
+\newpage
+
+**Question 3.a)**
+
+In this case, the data is missing at random (independent of the value $Y_2$ should have taken). Moreover, the parameter from the missingness mechanism $\psi$ and those of the data model, $\theta$, are distinct/disjoint. Thus, this missing data mechanism is ignorable for likelihood-based estimation.
+
+**Question 3.b)**
+
+In this case, the data is missing not at random (MNAR). Thus, it cannot be ignored for likelihood-based estimation, as it could be seriously biased.
+
+**Question 3.c)**
+
+In this case, the data is missing at random (independent of the value that $Y_2$ should have taken). However, the probability of missingness is affected by the parameter $\mu_1$, which is part of $\theta$. Therefore, knowledge about $\theta = (\mu_1, \mu_2, \sigma^2_1, \sigma^2_2, \sigma_{12})$ implies information about the missingness mechanism. Then, this missing data mechanism is not ignorable for likelihood-based estimation, as it would not be efficient.
+
+\newpage
+
+![](./q4.jpg)
+
+```{r}
+# Now, we will proceed to the M-step
+
+# Load data
+setwd("D:\\Pablo\\Documents\\Universidad\\MASTER\\IncompleteDA")
+load("dataex4.Rdata")
+
+# head(dataex4, 10)
+observed4 <- na.omit(dataex4)
+missing4 <- dataex4[which(is.na(dataex4$Y)),]
+
+# Define the log likelihood function
+llikelihood4 <- function(beta, x.obs, y.obs, b0.t, b1.t){
+  b0 <- beta[1]
+  b1 <- beta[2]
+  sum(y.obs * (b0 + b1 * x.obs) - log(1 + exp(b0 + b1 * x.obs))) + 
+  sum((exp(b0.t + b1.t * x.obs) / (1 + exp(b0.t + b1.t * x.obs))) * 
+        (b0 + b1 * x.obs) - log(1 + exp(b0 + b1 * x.obs)))
+  }
+     
+# Define paramaeters            
+beta <- c(0,0)
+dif <- 1
+eps <- 0.00001
+
+
+while(dif > eps){
+  b0.t <- beta[1]
+  b1.t <- beta[2]
+  
+  mle4 <- maxLik(logLik = llikelihood4, x.obs = observed4$X, y.obs = observed4$Y,
+              b0.t = b0.t, b1.t = b1.t, start = c(beta_0 = 0, beta_1 = 0))
+  beta <- mle4$estimate
+  dif <- max(abs(beta[1] - b0.t), abs(beta[2] - b1.t))
+  }
+
+summary(mle4)
+beta
+```
+
+The MLE estimates are $\beta_0 = 0.9755243$ and $\beta_1 = -2.4803781$.
+
+\newpage
+
+![](./5a1.jpg)
+
+![](./5a2.jpg)
+
+**Question 5.b)**
+
+```{r}
+# Load data
+setwd("D:\\Pablo\\Documents\\Universidad\\MASTER\\IncompleteDA")
+load("dataex5.Rdata")
+y <- dataex5
+
+# Initialise parameters
+p.new <- 0.3
+lambda.new <- 0.3
+mu.new <- 0.4
+epsilon <- 0.0001
+dif <- 1
+
+while(dif > epsilon){
+  p <- p.new
+  mu <- mu.new
+  lambda <- lambda.new
+  
+  ptilda <- (lambda * p * y**(- lambda - 1))/ (lambda * p * y**(- lambda - 1) + 
+                                                 (mu * (1 - p) * y**(- mu - 1)))
+  
+  p.new <- mean(ptilda)
+  lambda.new <- sum(ptilda) / sum(ptilda * log(y))
+  mu.new <- (length(y) - sum(ptilda)) / sum(log(y) - log(y) * ptilda)
+  
+  dif <- abs(p.new - p) + abs(mu.new - mu) + abs(lambda.new - lambda)
+}
+
+cat("p:", p.new, "\nlambda:", lambda.new, "\nmu:", mu.new)
+```
+
+The MLEs for the components are:
+
+-   $p = 0.7939337$,
+
+-   $\lambda = 0.9762783$,
+
+-   $\mu = 6.670599$.
+
+```{r}
+sum(y > 15) #about 95% left in the histogram
+
+hist(dataex5, main= "Histogram of the data (range [1, 15])", 
+     ylab = "Density", xlab = "Values", 
+     xlim = c(0,15), 
+     breaks = "Freedman-Diaconis", freq = F)
+
+legend(legend = "Estimated density", "topright", lwd = 1, col = "blue2")
+curve(p*(lambda*x^(-lambda-1))+ (1 - p)*(mu*x^(-mu-1)),
+      add = TRUE, lwd = 2, col = "blue2")
+```
+
+The histogram plots only the values in the range $[1, 15]$, as this is approximately 95% of the dataset. If we were to plot all the data, the histogram would be barely understandable, as there are a few outliers that distort massively the image.
+
+As it can be observed, the estimated density matches with precision the data in dataex5.Rdata.
+
+Now, we zoom in the values in the range $[1, 5]$. About 85% of the points in the dataset are found within this range. In this case, with more detail, we can see that indeed the estimated density mtches the observed data.
+
+```{r}
+sum(y > 5) #about 95% left in the histogram
+
+hist(dataex5, main= "Histogram of the data (range [1,5])", 
+     ylab = "Density", xlab = "Values", 
+     xlim = c(1,5), 
+     breaks = "Freedman-Diaconis", freq = F)
+
+legend(legend = "Estimated density", "topright", lwd = 1, col = "blue2")
+curve(p*(lambda*x^(-lambda-1))+ (1 - p)*(mu*x^(-mu-1)),
+      add = TRUE, lwd = 2, col = "blue2")
+```
