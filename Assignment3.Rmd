@@ -1,0 +1,555 @@
+---
+title: "Incomplete Data Analysis - Assignment 3"
+author: "Pablo Ruiz Barnada"
+date: "2023-04-11"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(mice)
+```
+
+# Exercise 1
+
+**Question 1.a** Firstly, we will load the dataset nhanes, included in the library `mice` . This dataset has some missing data, which we will explore in the code cells below.
+
+```{r}
+# Load data
+nhanes <- nhanes
+head(nhanes)
+dim(nhanes)
+sum(is.na(nhanes))
+```
+
+```{r}
+# Calculate missing cases
+incomp <- 0
+for (i in 1:dim(nhanes)[1]){
+  if (sum(is.na(nhanes[i, ])) > 0){
+    incomp <- incomp + 1
+  }
+}
+
+cat("The percentage of incomplete cases is", incomp/dim(nhanes)[1]*100, "%")
+```
+
+The percentage of incomplete cases in the dataset nhanes is 48%. This means that 12 out of the 25 rows in the dataset have at least one missing value.
+
+**Question 1.b**
+
+```{r}
+# Perform steps 1
+imput.nhanes <- mice(nhanes, printFlag = FALSE, seed = 1)
+
+# Step 2
+fits <- with(imput.nhanes, lm(bmi ~ age + hyp + chl))
+
+# Step 3
+ests <- pool(fits)
+ests
+# summary(ests, conf.int = TRUE)
+```
+
+The column `lambda` gives the proportion of variance in each parameter due to its missing values. In this case, the proportions are 0.69 for age, 0.35 for hypertension (`hyp`) and 0.3 for cholesterol (`chl`). Thus, age is the most affected variable by the missing data, with around 69% of its variance being a consequence of missingness. Aside from these, the intercept of the regressions is the elast affected by the missing data, with a proportion of approximately 0.09 of its variance due to missingness.
+
+```{r}
+# Plot traceplot and density
+
+plot(imput.nhanes)
+densityplot(imput.nhanes)
+```
+
+From the traceplots above, we see that there are problems with mixing and convergence for each feature. The densities for the estimated values do look similar to the ones observed, although they could be improved.
+
+**Question 1.c**
+
+Now, we attempt the previous analysis with different seeds.
+
+```{r}
+# Steps 1,2,3 for each seed
+for (i in 2:6){
+  cat("\nFor seed = ", i, ", the following results are obtained:\n")
+  imput.nhanes <- mice(nhanes, printFlag = FALSE, seed = i)
+  fits <- with(imput.nhanes, lm(bmi ~ age + hyp + chl))
+  ests <- pool(fits)
+  print(ests)
+  # summary(ests, conf.int = TRUE)
+  cat("\n\n")
+}
+```
+
+In general, we see that the results we obtained with `seed = 1` are different to what can be obtained with other seeds. For instance, the proportion of variance due to missing data for the parameter age is reduced from 0.69 to 0.4, 0.59, 0.21, 0.45 and 0.65 respectively for seeds 2 to 6. The opposite is observed for cholesterol, with a tendency to increase when setting different seeds, obtaining proportions as big as 0.56 (`seed = 3`) and 0.52 (`seed = 6`). With regards to hypertension, the proportion of variance due to missingness corresponding to `seed = 1` lies between the values obtained for other seeds (0.35 versus 0.14, 0.41, 0.2, 0.59 and 0.3). In general, we can observe that there is a large variance in the proportions obtained by using different seeds. This is true even for the intercept of the regressions, which can get proportions as high as 0.48 (`seed = 5`).
+
+```{r}
+# Traceplots and densities
+par(mfrow = c(1,2))
+for (i in 2:6){
+  imput.nhanes <- mice(nhanes, printFlag = FALSE, seed = i)
+  print(plot(imput.nhanes, main = paste("Seed", i)))
+  print(densityplot(imput.nhanes, main = paste("Seed", i)))
+}  
+  
+```
+
+The previous plots show the same problems as in Question 1.b, there are evident problems with mixing and convergence, observed in the traceplots. Again, density matching could be improved, but it is not bad *per se*.
+
+**Question 1.d**
+
+Now, we perform the same analysis as before but using `M = 100`, this is, using more copies of the original dataset so when we pool our results there is more data employed.
+
+```{r}
+# Steps 1,2,3 for eac hseed
+for (i in 1:6){
+  cat("\nFor seed = ", i, ", the following results are obtained:\n")
+  imput.nhanes <- mice(nhanes, printFlag = FALSE, seed = i, m = 100)
+  fits <- with(imput.nhanes, lm(bmi ~ age + hyp + chl))
+  ests <- pool(fits)
+  print(ests)
+  # summary(ests, conf.int = TRUE)
+  cat("\n\n")
+}
+```
+
+By using M = 100 copies of the original dataset, we have achieved a drastic reduction in the variance of the resulting proportions of variance due to missing data for each parameter. This was expected, as the pooling step had more results available (100 instead of 5) and the between imputation variance could be reduced, making the computed averages more similar across seeds. As a consequence, estimating BMI with the data available, and likewise out-of-sample predictions, should be more accurate if the model defined was appropriate.
+
+Indeede, we see that the proportions are now relatively stable across seeds, obtaining for each variable:
+
+-   Age: 0.43, 0.4, 0.31, 0.39, 0.33 and 0.44.
+
+-   Hypertension: 0.29, 0.28, 0.24, 0.25, 0.29 and 0.29.
+
+-   Cholesterol: 0.32, 0.29, 0.33, 0.28, 0.25 and 0.31.
+
+-   Intercept: 0.23, 0.19, 0.22, 0.21, 0.23 and 0.25.
+
+Now, we analyse the convergence and densities of the features.
+
+```{r}
+# Traceplots and densities
+par(mfrow = c(1,2))
+for (i in 1:6){
+  imput.nhanes <- mice(nhanes, printFlag = FALSE, seed = i, m = 100)
+  print(plot(imput.nhanes, main = paste("Seed", i)))
+  print(densityplot(imput.nhanes, main = paste("Seed", i)))
+}  
+  
+```
+
+Now, the convergence for cholesterol and BMI has improved, but it is still a problem for hypertension. Other imputation methods should be tested to see if they can improve the mixing for hypertension. The densities do match with accuracy those of the observed data.
+
+It is important to note that there was no big loss in efficiency by setting M = 100, so this approach is preferred to the previous one, when M = 5.
+
+\newpage
+
+# Exercise 2
+
+Firstly, we load the data, and observe how the dataset is defined.
+
+```{r}
+# Load data
+load("~/Universidad/MASTER/IncompleteDA/dataex2(1)(1).Rdata")
+# head(dataex2)
+dim(dataex2)
+```
+
+We perform stochastic regression imputation, which is classified as *improper*, as it does not take into account the uncertainty of the parameter.
+
+```{r}
+# Real estimate
+real.est <- 3
+
+# Initialise counter
+counter.nob <- 0
+
+# For each dataset, do steps 1,2,3...
+for (i in 1:100){
+  imps <- mice(dataex2[,,i], printFlag = FALSE, seed = 1, 
+               m = 20, method = "norm.nob")
+  fits <- with(imps, lm(Y ~ X))
+  ests <- pool(fits)
+  
+  # Obtain high and low limits of CI
+  low.ci <- summary(ests, conf.int = TRUE)[2,7]
+  high.ci <- summary(ests, conf.int = TRUE)[2,8]
+  
+  # Add 1 to counter if real estimate is within CI limits
+  if (real.est > low.ci & real.est < high.ci){
+    counter.nob <- counter.nob + 1
+  }
+}
+
+cat("The empirical coverage probability is", counter.nob ,"%")
+```
+
+The empirical coverage probability obtained using improper stochastic regression imputation is 88%. This is, the real value of $\beta_1$ was within the 95% confidence interval of $\hat\beta_1$ 88% of the times.
+
+Now, we calculate the coverage probability using boostrap-based imputation, which does take the uncertainty of the parameter into account (a *proper* method).
+
+```{r}
+# Initialie counter
+counter.bootstrap <- 0
+
+# For each dataset, perform steps 1,2,3
+for (i in 1:100){
+  imps <- mice(dataex2[,,i], printFlag = FALSE, seed = 1, 
+               m = 20, method = "norm.boot")
+  fits <- with(imps, lm(Y ~ X))
+  ests <- pool(fits)
+  
+  # Obtain CI limits and check if real value is within them
+  low.ci <- summary(ests, conf.int = TRUE)[2,7]
+  high.ci <- summary(ests, conf.int = TRUE)[2,8]
+
+    if (real.est > low.ci & real.est < high.ci){
+    counter.bootstrap <- counter.bootstrap + 1
+  }
+}
+
+cat("The empirical coverage probability is", counter.bootstrap ,"%")
+```
+
+The bootstrap-based imputation achieves a coverage probability of 95%, improving the stochastic imputation. This results gives us an idea on the importance of taking the uncertainty of parameters into account. By accounting for this uncertainty, wider confidence intervals are obtained, and these contain the true value of the estimate with higher probabilities.
+
+\newpage
+
+# Exercise 3
+
+![](./A3.jpg)
+
+\newpage
+
+# Exercise 4
+
+To start the problem, we load the data and print the first few rows to see how the dataset is defined.
+
+```{r}
+# Load data
+load("~/Universidad/MASTER/IncompleteDA/dataex4(4).Rdata")
+dim(dataex4)
+head(dataex4)
+```
+
+```{r}
+# Plot missing values
+mdpat_mice <- md.pattern(dataex4)
+```
+
+In the above plot we can see how the missing values are distributed. While the variable $x_2$ is complete, both $y$ and $x_1$ have 250 missing observations each. Moreover, there are 68 rows where $y$ and $x_1$ are missing simultaneously.
+
+Recall that our model is defined as $y_i = \beta_0 + \beta_1x_{1i} + \beta_2x_{2i} + \beta_3x_{1i}x_{2i} + \epsilon_i$, where both $x_{1i}$ and $x_{2i}$ are normally distributed.
+
+```{r}
+# Plot distributions
+par(mfrow=c(1, 2))
+hist(dataex4$x1, main= "Histogram of x1", xlab = "x1")
+hist(dataex4$x2, main= "Histogram of x2", xlab = "x2")
+```
+
+Indeed, these variables are normally distributed, with their expected means (0 and 1.5, respectively). Now, we proceed to imputation of the missing values.
+
+**Question 4.a**
+
+We started by imputing $y$ and $x_1$ only.
+
+```{r}
+# Do initial imputation
+imput.ex4 <- mice(dataex4, printFlag = FALSE, seed = 1, m = 50)
+
+# Change imputation method for x1
+imput.ex4$method
+meth <- imput.ex4$method
+meth["x1"] <- "norm"
+```
+
+First, we check on what method of imputation was going to be used for the variables. As $x_1$ is normally distributed, we change its imputation method to "norm".
+
+```{r}
+# perform steps 1,2,3
+imput.ex4 <- mice(dataex4, method = meth, printFlag = FALSE, seed = 1, m = 50)
+imput.ex4$loggedEvents
+fits <- with(imput.ex4, lm(y ~ x1*x2))
+ests <- pool(fits)
+# print(ests)
+summary(ests, conf.int = TRUE)
+```
+
+The resulting pooled model had the following estimates and respective 95% confidence intervals:
+
+-   $\hat\beta_0 = 1.605$, with 95% confidence interval $[1.448, 1.763]$,
+
+-   $\hat\beta_1 = 1.485$, with 95% confidence interval $[1.293, 1.678]$,
+
+-   $\hat\beta_2 = 1.95$, with 95% confidence interval $[1.851, 2.05]$,
+
+-   $\hat\beta_3 = 0.706$, with 95% confidence interval $[0.588, 0.824]$.
+
+From these results, we see that a one unit increase in $x_2$ has a higher effect in estimating $y$ than a one unit increase in $x_1$.
+
+These estimates are not a good representation of our original formula. We know that the true values are $\beta_0  =1.5, \beta_1 = 1, \beta_2 =2$ and $\beta_3 = 1$. Only the estimates $\hat\beta_0$ and $\hat\beta_2$ contain the real value in its confidence interval. None of $\hat\beta_1$ or $\hat\beta_3$ contain their true values within the 95% confidence interval.
+
+```{r}
+# Plot traceplots
+plot(imput.ex4)
+```
+
+There seems to be no convergence problems for this imputation method.
+
+**Question 4.b**
+
+Now, we do the same process of imputation, but defining the interaction term $x_1x_2$ explicitly in the dataset, and perform passive imputation. Therefore, we define $\textit{Interaction} = x_1x_2$.
+
+```{r}
+# DDefine variable
+dataex4['interaction'] <-  dataex4$x1 * dataex4$x2
+
+# Initial imputation
+imput.ex4b <- mice(dataex4, printFlag = FALSE, seed = 1, m = 50)
+
+# Imputation mehod ammends
+meth <- imput.ex4b$method
+meth
+meth["x1"] <- "norm"
+meth['interaction'] <- "~I(x1*x2)"
+meth
+
+# Interaction will not act as a predictor of x1, x2
+pred <- imput.ex4b$predictorMatrix
+pred[c("x1", "x2"), "interaction"] <- 0 
+
+#  Avoiding multicollinearity
+pred[c("y", "interaction"), c("x1", "x2")] <- 0
+pred
+
+#no reordering needed, interaction is last visited
+visSeq <- imput.ex4b$visitSequence 
+visSeq
+```
+
+For passive imputation, we first want to generate the values of $x_1$ and then calculate the interaction term. For this reason, we specified the method of imputation of the interaction term to follow the formula "\~I(x1\*x2)". As we did before, we also changed the imputation method for $x_1$ to be "norm", following its distribution. Moreover, we do not want the values of the interaction term to affect the estimation of $x1$, as these variables are not independent, and precisely the interaction term depends on $x_1$, but the opposite does not hold. Moreover, to avoid multicollinearity, we do not include all the three variables ($x_1$, $x_2$ and interaction) in the model
+
+```{r}
+# Do final imputation with required methods, predictors
+imput.ex4b <- mice(dataex4, printFlag = FALSE, seed = 1, m = 50,
+                   method = meth, predictorMatrix = pred)
+
+fits <- with(imput.ex4b, lm(y ~ x1 + x2 + interaction))
+ests <- pool(fits)
+
+summary(ests, conf.int = T)
+```
+
+The results printed above are those obtained from passive imputation. The estimates resulting from the pooling are different as those got in subquestion 4.a. In particular, the estimates are:
+
+-   $\hat\beta_0 = 2.187$, with 95% confidence interval $[1.943, 2.432]$,
+
+-   $\hat\beta_1 = 0.971$, with 95% confidence interval $[0.699, 1.244]$,
+
+-   $\hat\beta_2 = 1.599$, with 95% confidence interval $[1.46, 1.739]$,
+
+-   $\hat\beta_3 = 0.939$, with 95% confidence interval $[0.8, 1.079]$.
+
+We see that $\hat\beta_1, \hat\beta_2, \hat\beta_3$ have decreased slightly, while $\hat\beta_0$ has increased. Still, a one-unit increase in $x_2$ has stronger effect than $x_1$ in the estimation of $y$. The interaction term is now almost as relevant as $x_1$ in estimating $y$.
+
+Even if the estimations have changed from the previous imputation, the estimates are still not ideal. Only $\hat\beta_1$ and $\hat\beta_3$ contain their true value within their confidence interval. Note that, using this imputation method, the standard errors are larger than those in Question 4.a, and therefore the confidence intervals are wider.
+
+```{r}
+# Traceplots
+plot(imput.ex4b)
+```
+
+There seems to be no convergence problems for this imputation method.
+
+**Question 4.c**
+
+Now, we will proceed with imputing the interaction term as if it was any another variable.
+
+```{r}
+# Histogram
+hist(dataex4$interaction, main = "Histogram of interaction term",
+     xlab = "Interaction term (x_1 * x_2)")
+```
+
+From the histogram of the interaction term, we cannot assume any clear distribution. Thus, we will do the imputation for it with the default settings (predictive mean matching).
+
+```{r}
+# Initial imputation
+imput.ex4c <- mice(dataex4, printFlag = FALSE, seed = 1, m = 50)
+
+# Specify imputation method for x1
+meth <- imput.ex4c$method
+meth['x1'] <- "norm"
+
+# Perform steps 1,2,3
+imput.ex4c <- mice(dataex4, printFlag = FALSE, seed = 1, m = 50,
+                   method = meth)
+
+fits <- with(imput.ex4c, lm(y ~ x1 + x2 + interaction))
+ests <- pool(fits)
+
+summary(ests, conf.int = T)
+```
+
+The following estimates have been obtained:
+
+-   $\hat\beta_0 = 1.497$, with 95% confidence interval $[1.345, 1.649]$,
+
+-   $\hat\beta_1 = 0.995$, with 95% confidence interval $[0.816, 1.173]$,
+
+-   $\hat\beta_2 = 2.025$, with 95% confidence interval $[1.943, 2.107]$,
+
+-   $\hat\beta_3 = 1.013$, with 95% confidence interval $[0.926, 1.1]$.
+
+These estimates are very similar to the ones found in Question 4.b, although the standard errors are smaller, and therefore the confidence intervals are narrower. In any case, now the four estimates contain their true value within their confidence intervals, which is a big improvement if we were to use this model in practice. On the contrary, we are obviously miss-representing the fundamentals of the original model, as now the interaction term is independent of its parts ($x_1$ and $x_2$).
+
+```{r}
+# Traceplots
+plot(imput.ex4c)
+```
+
+There seems to be no convergence problems with this imputatinon method.
+
+**Question 4.d**
+
+Conceptually, imputing the interaction term as another variable has an evident drawback. The interaction term is obviously not independent of $x_1$ and $x_2$, and so it does not make sense that in each iteration, the result of the interaction term acts as a predictor of $x_1$ (not for $x_2$ as it has no missing values), since the interaction term itself was generated with the previous prediction of $x_1$.
+By imputing the interaction term as just another variable, we make it independent of both $x_1$ and $x_2$, miss-representing the underlying model. The interaction term in the imputed dataset will rarely be equal to the product $x_1x_2$.
+
+\newpage
+
+# Exercise 5
+
+```{r}
+# Load data
+load("~/Universidad/MASTER/IncompleteDA/NHANES2(2).Rdata")
+nhanes2 <- NHANES2
+head(nhanes2)
+dim(nhanes2)
+sum(is.na(nhanes2))
+```
+
+First, we load the data and do some quick inspection. From the plot below, it can be observed that a few variables (gender, age, race and weight) have no missing values. On the contrary, bilirubine, for instance, has 47 misses, the most out of any feature. Out of the 500 cases in the dataset, 411 of them are complete. The most common "missing pattern" is cholesterol, HDL and bilirubin values missing simultaneously (29 cases).
+
+```{r}
+# Plot missing values
+require(JointAI)
+md_pattern(nhanes2, pattern = FALSE, color = c('#34111b', '#e30f41'))
+```
+
+Next, we analyse the distributions of each variable in the dataset. We can see that the observations are almost evenly splitted between male and female subjects. Aside from this, there is no other evident distribution for any of the features (`hgt` looks the most similar to a normal distribution, but with very heavy tails). Other features (as weight or bilirubin) are have close-to normal distributions, but are highly skewed.
+
+```{r}
+# Distributions
+par(mar = c(3, 3, 2, 1), mgp = c(2, 0.6, 0))
+plot_all(nhanes2, breaks = 30, ncol = 4)
+```
+
+We will be working with the following model:
+
+$weight = \beta_0 + \beta_1gender + \beta_2age + \beta_3height +\beta_4WC + \epsilon$,
+
+with $\epsilon$ being normally distributed, with mean 0 and variance $\sigma^2$, and where $WC$ represents waist circumference (WC).
+
+The missing-values pattern for these four variables is the following:
+
+```{r}
+# Missing values
+patt <- md.pattern(nhanes2[, c(1,2,4,7,12)])
+```
+
+There are 34 missing values in total, with 468 complete cases. Only height and WC have missing missing values, 11 and 23 respectively. Only twice height and WC miss simultaneously.
+
+Now we can start with the imputation of missing values. Since the five variables that we work with are independent, we do not need to ammend the predictor matrix. Similarly, as explained before, we are going to use predictive mean matching for all our variables, because none of them have a clearly defined distribution. For results consistency, we will set `seed = 1`. Moreover, we set `m = 50` and `maxit = 20`, which will help later to check for convergence.
+
+```{r}
+# Subset data
+ex5 <- nhanes2[, c(1,2,4,7,12)]
+
+# Step 1
+imput.ex5 <- mice(ex5, printFlag = FALSE, seed = 1, m = 50, maxit = 20)
+# imput.ex4$loggedEvents - no errors obtained
+
+# Steps 2 and 3
+fits <- with(imput.ex5, lm(wgt ~ gender + age + hgt + WC))
+ests <- pool(fits)
+```
+
+```{r}
+# Traceplots
+plot(imput.ex5)
+```
+
+Previous to these words, we can observe the traceplots of the estimated missing values. As it was mentioned before, height and WC were the only variables that had missing observations. From the traceplots above, we consider that there has been a good mixing, and the iterative algorithm appears to have converged for these two features.
+
+Next, we analyse the distribution of the imputations.
+
+```{r}
+# Densities
+densityplot(imput.ex5)
+```
+
+The density of the observed data is represented by the blue line, while the red lines are the densities for each copy $M = 50$ we set initially. The distributions after imputting data for WC seems to resemble the observed distribution, while that of height does not seem to match reality as much. For this reason, we decide to analyse height conditional on gender.
+
+```{r}
+# Densities controlling for gender
+densityplot(imput.ex5, ~hgt|gender)
+densityplot(imput.ex5, ~WC|gender)
+
+```
+
+The plots for height are not highly informative, although there seems to be a decent match in the distributions when differentiating by height. We also plotted the distributions for WC in terms of gender, and we see how, in this case, observed and generated densities match with precision.
+
+Now, we show the pooled model results:
+
+```{r}
+# Imputation results
+summary(ests, conf.int = TRUE)
+```
+
+All the estimated coefficients are strongly significant, except gender. As it could be expected, higher measures for height and WC are associated with higher weights. It is interesting to see that age is negatively correlated with weight, meaning that, *cetereis paribus*, older people will be lighter than younger. In particular, a 1-year difference in age would be associated with around 156 grams in weight.
+
+In depth analysis should be carried out on the gender variable. It is not significant to the 5% level, although it is for the 10%. The 95% confidence interval shows that females will *likely* be associated with lower weights, which is to be expected. To make sure the gender variable has some influence in the model, we perform a Wald-test:
+
+```{r}
+# Wald-test
+fit_no_gender <- with(imput.ex5, lm(wgt ~ age + hgt + WC))
+D1(fits, fit_no_gender)
+```
+
+In the cell above we fitted a model with no gender variable, and performed a Wald-test. The p-value is significant to the 10% level, but not the 5% level, meaning that the null hypothesis ("both models are equivalent") can be rejected to the 10% significance level, but not to the 5%. In order to decide what to do with this variable, it would be helpful to have some experts' opinion. In any case, it might be worth to keep it, as there exists certain correlation between gender and weight, as men's bones are more dense than women's [P. M. Cawthon (2011); K. A. Alswat (2017)].
+
+Next, we proceed to do sanity checks over the linear model assumptions.
+
+```{r}
+# Plot residuals vs fitted values
+comp1 <- complete(imput.ex5, 1)
+plot(fits$analyses[[1]]$fitted.values, residuals(fits$analyses[[1]]),
+     xlab = "Fitted values", ylab = "Residuals")
+```
+
+Plotting the residuals versus fitted values, we see that these are distributed symmetrically around 0. Higher values seem to have slightly higher variance (possibly against homoskedasticity assumption), but it is probably due to a lower number of observations in this range. Thus, by looking at this plot, there is nothing to worry about.
+
+```{r}
+# QQplot
+qqnorm(rstandard(fits$analyses[[1]]))
+qqline(rstandard(fits$analyses[[1]]), col = 2)
+```
+
+Above we showed the QQ-plot for this model. There is a slight deviation from the reference line (red), especially for the higher quantiles, but it should not be problematic to the inference from our model.
+
+Lastly, we analyse the performance of our model.
+
+```{r}
+# Goodness of fit
+pool.r.squared(ests, adjusted = TRUE)
+```
+
+As seen above, the adjusted $R^2 = 0.856$, with 95% confidence intervals $(0.83, 0.878)$. This means that the model is able to explain about 85% of the variance present in our dataset. Therfore, we claim that the model fits the data well.
+
+**Conclusion**
+
+In the last pages of this report we have created a linear regression model that related weight to a series of covariates: age, gender, height and waist circumference. The dataset we used had missing values, so first of all we carried out imputation for these. As the distributions of the features with missing data were not obviously defined, we performed predictive mean imputation. As seen from the statistical analysis above, the resulting model fitted the data correctly, explaining over 85% of the variance in the dataset. Moreover, the assumptions for a linear model were not violated in any case.
+
+The resulting model estimates confirmed what was expected: height and waist circumference are possitively associated with weight. Perhaps more surprising, age is negatively associated with weight, and one could expect to lose slightly more than 150g of weight every year. These three effects are strongly statistically significant. The effect of gender on weight is not as evident. It seems that females are associated with lower weights, however the gender's effect is significant only to the 10% level (this is, in the 5% significance level, we cannot discard that gender has **no effect** on weight). In fact, to the 5% significance level, a model that does not take into account gender cannot be claimed to be different than a model that takes gender. Further analysis should be done to conclude whether it is optimal to include a gender parameter in the regressions.
