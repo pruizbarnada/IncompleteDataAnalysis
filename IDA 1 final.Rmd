@@ -1,0 +1,380 @@
+---
+title: "IDA Assignment 1"
+author: "Pablo Ruiz Barnada"
+date: "2023-02-14"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**1.a** Assuming that the ALQ is MCAR, the probability for ALQ being missing for those observations such that ALQ = No is **(ii) 0.3**. In MCAR, the probability that a value is missing is unrelated to the values that are/should have been obtained. Thus, the probability of ALQ = No missing has to be the same as the probability of ALQ = Yes, namely 0.3.
+
+**1.b** If the ALQ is MAR given gender, then **(ii) the probability of ALQ being missing is independent of the Yes/No value of ALQ after adjusting for gender**. In MAR situations, the missingness of the value depends only on the observed values (gender) but is independent of the specific missing observations (number of drinks) themselves. Under MAR, the probability of missingness depends uniquely on the gender of the respondent, and not on the answer to ALQ. Thus, within each gender group, the probability of a value being missing is independent of the yes/no answer to the ALQ question.
+
+**1.c** Under MAR conditions, if we only have information about the probability of ALQ being missing for men, we cannot derive the probability of ALQ being missing for women. Thus, the correct answer is **(iii) it is impossible to conclude from the information given**. If the ALQ is MAR, the probability of missing an observation depends on each independent "stratum" (men and women, in our problem), and each stratum's probability is independent to the others. Therefore, from the missingness probability for men, we cannot infer anything about the missingness probability for women.
+
+**2.** By the claim, we know that there are 100 subjects and 10 variables. If each of the variables is missing $10\%$ of their values, then each variable misses $100 \cdot 10\% = 10$ values.
+
+Under complete case analysis, the largest possible subsample would be of 90 subjects (90% of the original dataset), in the case where there are 10 subjects that are missing all their values, and the other 90 have complete information.
+
+On the other hand, the smallest possible subset under complete case analysis would be an empty subset. If each subject was only missing their value in one the variables (recall, 100 subjects and 100 total missing values in the dataset), then none of them would be usable in a complete case analysis, and the subsample would reduce to a 0% of the original dataset.
+
+**3.** Firstly, we generate the data.
+
+```{r}
+set.seed(1)
+
+z1 <- rnorm(500)
+z2 <- rnorm(500)
+z3 <- rnorm(500)
+
+y1 <- 1 + z1
+y2 <- 5 + 2*z1 + z2
+Y <- data.frame(y1, y2)
+```
+
+**3.a** Firstly, we apply the missingness condition. The marginal distributions for complete and observed $Y_2$ are as follows.
+
+```{r cars}
+# Set values
+
+a <- 2
+b <- 0
+y2miss <- y2
+
+# Drop the values according to the missing condition
+for (i in 1:length(y2miss)){
+  y2miss[i] <- ifelse(a*(y1[i] - 1) + b*(y2[2] - 5) + z3[i] < 0, NaN, y2miss[i])
+}
+
+# Find the index of the values that are missing
+nan_position <- which(is.na(y2miss))
+
+# Produce boxplots
+boxplot(y2,y2miss, y2[nan_position],
+        main = 'Complete vs Observed vs Missing Y2',
+        names = c("Complete", "Observed", "Removed"))
+
+# Produce marginal densities
+plot(density(y2),lwd = 2, col = "blue", xlab = expression(Y[2]),
+     main = paste("Marginal densities of Y2 subsets"),
+     ylim = c(0, 0.3))
+
+lines(density(y2miss[-nan_position]), lwd = 2, col = "red")
+lines(density(y2[nan_position]), lwd = 2, col = "darkgreen")   
+legend(8,0.3, legend = c("Complete data", "Observed data", "Missing data"),
+       col = c("blue", "red", "darkgreen"), lty = c(1,1,1), lwd = c(2,2,2), 
+       bty ="n")
+```
+
+The values of $Y_2$ are missing if $2(Y_1 - 1) + Z_3 < 0$. Under this circumstances, the missingness clearly depends on $Y_1$ but not on the $Y_2$, so this mechanism is MAR.
+
+However, if we plug the formula for $Y_1$ in, we see that the missingess ultimately depends on the values of $Z_1$ and $Z_3$: $2(Y_1 - 1) + Z_3 = 2(1 + Z_1 - 1) + Z_3 = 2Z_1 + Z_3 < 0$. In particular, the smaller this values are, the more likely is the observation of $Y_2$ to be missing. The way $Y_1 = 1 + Z_1$ and $Y_2 = 5 + 2Z_1 + Z_2$ are defined, there is a connection between them through their component $Z_1$, where a lower $Z_1$ leads to smaller $Y_1$ and $Y_2$ observations. Thus, it could be argued that the probability of missingness does depend on the value of $Y_2$ as well (via $Z_1$), therefore being an MNAR mechanism. This makes sense to what it is observed in the plots above. A lower value of $Z_1$ will lead to a lower value of $Y_2$ and a higher probability of the value being missing. The marginal density plots indeed show that the missing values are generally of lower $Y_2$s, while larger values are observed.
+
+**3.b** Now, we impute the missing values using stochastic regression imputation.
+
+```{r}
+# Fit the model
+fit <- lm(y2miss ~ y1)
+
+# Some basic model checks for the assumptions
+plot(fit$fitted.values, residuals(fit), main="Fitted values vs Residuals",
+     xlab = "Fitted values", ylab = "Residuals")
+abline(h=00, col="red")
+qqnorm(rstandard(fit))
+qqline(rstandard(fit))
+
+# Make predictions according to stochastic regression
+predictions <- predict(fit, newdata = Y) + rnorm(nrow(Y), 0, sigma(fit))
+
+# Create new array, adding the predicted values where there where missing observations
+new_y2 <- ifelse(is.na(y2miss), predictions, y2miss)
+
+
+boxplot(y2,new_y2,
+        main = "Complete vs Observed Y2",
+        names = c("Complete", "Observed"))
+
+plot(density(y2),lwd = 2, col = "blue", xlab = expression(Y[2]),
+     main = "Marginal distribution", ylim = c(0, 0.3))
+lines(density(new_y2), lwd = 2, col = "red")
+legend(8, 0.3, legend = c("Complete data", "Completed data"),
+       col = c("blue", "red"), lty = c(1,1), lwd = c(2,2), bty ="n")
+
+
+```
+
+The model checks produce positive results, and the linear model assumptions seem to be satisfied. Thus, it is safe to proceed to the prediction step. After adding the values for the missing observations, we see that now both the complete and the completed data have similar distributions. This suggests that the stochastic regression mechanism to fill unobserved values is appropriate in this case.
+
+**3.c** Now, we update the values for $a$ and $b$ .
+
+```{r}
+# Update values
+a <- 0
+b <- 2
+y2miss <- y2
+
+
+
+# Remove observations according to missingness condition
+for (i in 1:length(y2miss)){
+  y2miss[i] <- ifelse(a*(y1[i] - 1) + b*(y2[i] - 5) + z3[i] < 0, NaN, y2miss[i])
+}
+
+# Find observations that are missing
+nan_position <- which(is.na(y2miss))
+
+
+df <- data.frame(y1 = y1, y2 = y2, y2miss = y2miss)
+
+
+
+# Boxplot
+boxplot(y2,y2miss, y2[nan_position],
+        main = 'Complete vs Observed vs Missing Y2',
+        names = c("Complete", "Observed", "Removed"))
+
+
+# Produce marginal densities
+plot(density(y2),lwd = 2, col = "blue", xlab = expression(Y[2]),
+     main = paste("Marginal densities of Y2 subsets"), ylim = c(0, 0.4))
+lines(density(y2miss[-nan_position]), lwd = 2, col = "red")
+lines(density(y2[nan_position]), lwd = 2, col = "darkgreen")   
+legend(8,0.4, legend = c("Complete data", "Observed data", "Missing data"),
+       col = c("blue", "red", "darkgreen"), lty = c(1,1,1), lwd = c(2,2,2), bty ="n")
+
+```
+
+Under this circumstances, the mechanism is MNAR, as the probability that $Y_2$ has missing values is directly related to the values that should have been obtained. In particular, the missing condition is $2(Y_2 - 5) + Z_3 < 0$. The lower the value of $Y_2$, the more probable it is that the observation will be dropped. This reasoning agrees to what is seen in the plots, where the missing values tend to be lower than the observed.
+
+**3.d** Again, we input the missing values through stochastic regression imputation:
+
+```{r}
+# Fit the model
+fit2 <- lm(df$y2miss ~ df$y1, data = df)
+
+# Perform some basic model checks
+plot(fit2$fitted.values, residuals(fit2), main="Fitted values vs Residuals",
+     xlab = "Fitted values", ylab = "Residuals")
+abline(h=00, col="red")
+qqnorm(rstandard(fit2))
+qqline(rstandard(fit2))
+
+
+# Make predictions
+predictions <- predict(fit2, newdata = df) + rnorm(nrow(df), 0, sigma(fit2))
+
+# Add predicted values to the missing observations
+new_y2 <- ifelse(is.na(df$y2miss), predictions, df$y2miss)
+
+# COMMENT TGUS LITTLE BUTCH
+df$new_y2 <- new_y2
+
+# Produce boxplots
+boxplot(df$y2, df$new_y2,
+        main = "Complete vs Observed Y2",
+        names = c("Complete", "Observed"))
+
+
+# Produce marginal densities
+plot(density(df$y2),lwd = 2, col = "blue", xlab = expression(Y[2]),
+     main = "Marginal distribution", ylim = c(0, 0.3))
+lines(density(df$new_y2), lwd = 2, col = "red")
+legend(8, 0.3, legend = c("Complete data", "Completed data"),
+       col = c("blue", "red"), lty = c(1,1), lwd = c(2,2), bty ="n")
+
+```
+
+The model checks produce positive results, and the linear model assumptions seem to be satisfied. Thus, it is safe to proceed to the prediction step. After adding the values for the missing observations, we see that now the complete and the completed data do not have as similar distributions. The completed data is more frequent around the mean, and the median is a bit larger than in the complete data. This might be a consequence of the noise added in the predictions. For larger samples, this difference might be reduced.
+
+**4.** First, we load the dataset.
+
+```{r}
+load("~/Universidad/MASTER/Incomplete DA/databp(3).Rdata")
+```
+
+**4.a** We start by carrying out a complete case analysis. The mean value of recovery time, its associated standard error, and the Pearson correlation coefficients with the other two variables, dose and blood pressure, are the following:
+
+```{r}
+# Calculate mean
+print(paste("Mean: ", round(mean(databp$recovtime, na.rm = TRUE),4)))
+
+# Calculate standard error
+print(paste("Standard error:",
+            round(sd(databp$recovtime, na.rm = TRUE) /
+                    sqrt(length(which(!is.na(databp$recovtime)))), 
+                  4)))
+
+# Calculate Pearson correlations with respect to dose and blood pressure
+print(paste("Pearson correlation recovery time - dose:",
+            round(cor(databp$recovtime, databp$logdose, use = "complete"), 4)))
+
+print(paste("Pearson correlation recovery time - blood pressure:",
+            round(cor(databp$recovtime, databp$bloodp, use = "complete"), 4)))
+```
+
+When conducting the complete case analysis, there seems to be no correlation between recovery time and blood pressure, and there seems to exist a slightly positive correlation between recovery time and the dose of the drug.
+
+**4.b** Now, we conduct an analysis on the given dataset by using mean imputation mechanism. The values for the mean and standard error of the recovery time, and the Pearson correlation coefficients with respect to dose and blood pressure are, respectively:
+
+```{r}
+# Calculate mean
+m <- mean(databp$recovtime, na.rm = TRUE)
+print(paste("Mean: ", round(m, 4)))
+
+# Fill the NaN values with the mean of the observed observations
+filled <- ifelse(is.na(databp$recovtime), m, databp$recovtime)
+
+# Calculate standard error
+print(paste("Standard error: ",
+            round(sd(filled, na.rm = TRUE) / sqrt(length(filled)), 4)))
+
+# Calculate Pearson correlations with respect to dose and blood pressure
+
+print(paste("Pearson correlation recovery time - dose: ", round(cor(filled, databp$logdose, use = "complete"), 4)))
+print(paste("Pearson correlation recovery time - blood pressure: ", 
+            round(cor(filled, databp$bloodp, use = "complete"), 4)))
+```
+
+By using mean imputation, the value of the mean remains the same as in the complete case analysis, as expected. The standard error, logically, is reduced, as more observations are used to calculate this parameter. The correlation parameters as similar to those obtained in the complete case analysis.
+
+**4.c** Now, we fill the missing values through mean regression imputation. In order to do this, we regress the recovery time on the dose level and blood pressure.
+
+```{r}
+# Fir the regression model
+fit <- lm(recovtime ~ logdose + bloodp, data = databp)
+
+# Basic model checks
+plot(fit$fitted.values, residuals(fit), main="Fitted values vs Residuals", 
+     xlab = "Fitted values", ylab = "Residuals")
+abline(h = 0, col = "red")
+qqnorm(rstandard(fit))
+qqline(rstandard(fit),col="red")
+
+# Make predicions
+predictions <- predict(fit, newdata = databp)
+
+# Fill NaN observations with mean regression imputation
+rt_mri <- ifelse(is.na(databp$recovtime), predictions, databp$recovtime)
+
+#Calculate mean
+print(paste("Mean: ", 
+            round(mean(rt_mri, na.rm = TRUE), 4)))
+
+# Calculate standard error
+print(paste("Standard error: ",
+            round(sd(rt_mri, na.rm = TRUE) / sqrt(length(rt_mri))
+, 4)))
+
+# Calculate Pearson correlations with respect to dose and blood pressure
+
+print(paste("Pearson correlation recovery time - dose: ", 
+            round(cor(rt_mri, databp$logdose, use = "complete"), 4)))
+print(paste("Pearson correlation recovery time - blood pressure: ", 
+            round(cor(rt_mri, databp$bloodp, use = "complete"), 4)))
+```
+
+The model checks seem to provide sufficient evidence in favour of the linear model assumptions, even though there are not many observations available.
+
+After mean regression imputation, we see a slight increase in the mean value, and a standard error larger than in mean imputation. The correlations are still similar: neglectible in the case of recovery time and blood pressure, and slightly positive in the case of recovery time and dose level.
+
+**4.d** Now, we follow the same process, but fill the missing values via stochastic regression imputation. Thus, the regression will be as above, but we will add some random noise to the predictions.
+
+```{r}
+# Fit the model
+set.seed(1)
+fit <- lm(recovtime ~ logdose + bloodp, data = databp)
+
+# Basic model checks
+plot(fit$fitted.values, residuals(fit), main="Fitted values vs Residuals", 
+     xlab = "Fitted values", ylab = "Residuals")
+abline(h = 0, col = "red")
+qqnorm(rstandard(fit))
+qqline(rstandard(fit),col="red")
+
+# Make predictions
+predictions <- predict(fit, newdata = databp) + rnorm(nrow(databp), 0, sigma(fit))
+
+# Fill NaN observations with stochastic regression imputation
+rt_sri <- ifelse(is.na(databp$recovtime), predictions, databp$recovtime)
+
+#Calculate mean
+print(paste("Mean: ", 
+            round(mean(rt_sri, na.rm = TRUE), 4)))
+
+# Calculate standard error
+print(paste("Standard error: ",
+            round(sd(rt_sri, na.rm = TRUE) / sqrt(length(rt_sri))
+, 4)))
+
+# Calculate Pearson correlations with respect to dose and blood pressure
+
+print(paste("Pearson correlation recovery time - dose: ", 
+            round(cor(rt_sri, databp$logdose, use = "complete")
+, 4)))
+print(paste("Pearson correlation recovery time - blood pressure: ", 
+            round(cor(rt_sri, databp$bloodp, use = "complete"), 4)))
+```
+
+The QQ- and residual plots are as before, since the regression is the same. Then, yet there are few observations, there seems to be reasonable evidence in favour of the linear model assumptions. Thus, we proceed with the predictions and fill of the NaN values.
+
+In this case, we need to take extra care on the predictions we obtain. By adding random noise, it is possible that some predicted values do not make sense, for instance, obtaining a negative recovery time. How to solve this unreasonable result should be evaluated.
+
+In this case, the mean obtained is higher. The standard error is also higher, probably as a consequence of adding noise. The correlation values do not change much.
+
+**4.e** Lastly, we apply predictive mean matching, a especial case of hot deck imputation. We obtain the following results:
+
+```{r}
+# Fit the model
+fit <- lm(recovtime ~ logdose + bloodp, data = databp)
+
+# Make predictions
+predictions <- predict(fit, newdata = databp)
+
+# Find the indexes of missing values
+miss <- which(is.na(databp$recovtime))
+
+
+# Initialise an empty array and add new column to the data matrix
+news <- c()
+databp$recovtime_added <- databp$recovtime
+
+# Fill the missing values with those of the donor
+for (i in miss){
+  to_compare <- predictions[i]
+  distances <- sqrt((to_compare - predictions)^2)
+  most_similar <- which(distances == sort(distances)[2])
+  databp$recovtime_added[i] <- databp$recovtime[most_similar]
+}
+
+
+
+#Calculate mean
+print(paste("Mean: ", 
+            round(mean(databp$recovtime_added, na.rm = TRUE), 4)))
+
+# Calculate standard error
+print(paste("Standard error: ",
+            round(sd(databp$recovtime_added, na.rm = TRUE) / 
+                    sqrt(length(databp$recovtime_added)), 4)))
+
+# Calculate Pearson correlations with respect to dose and blood pressure
+
+print(paste("Pearson correlation recovery time - dose: ", 
+            round(cor(databp$recovtime_added, databp$logdose, use = "complete")
+                  , 4)))
+print(paste("Pearson correlation recovery time - blood pressure: ", 
+            round(cor(databp$recovtime_added, databp$bloodp, use = "complete"), 
+                  4)))
+
+```
+
+As the model is, again, the same as in the previous exercises, I do not output the residual and QQ-plots. The linear model assumptions still hold.
+
+After the missing values are inputted, we obtain the following results. Now, the mean is 19.44, really similar to the mean regression imputation. However, the standard errors grows slightly. The correlation between recovery time and dose rises slightly, but the correlation between recovery time and blood pressure remains close to 0.
+
+**4.f** One key advantage of predictive mean matching (PMM) over stochastic regression imputation (SRS) is that, with the former, you make sure you do not obtain unreasonable values in your predictions, as we previously discussed it can happen when adding noise to the predictions in SRS. With PPM, you assure that the inputted values lie within a plausible range of values (given that the original values in the dataset are correct).
+
+On the other hand, a potential risk using SRS arises when the dataset used is small (compared to the number of missing observations). If this is the case, it might happen that too many observations are given the same donor, and this could lead to erroneous analysis of the completed data.
